@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gemini Chatbot - Vue.js</title>
+  <style>
+    /* Same styling as before but scoped inside #app */
+    #app {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f7fa;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .chat-container {
+      width: 400px;
+      max-width: 95vw;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .chat-header {
+      background: #4a90e2;
+      color: white;
+      padding: 15px 20px;
+      font-size: 1.25rem;
+      font-weight: bold;
+      text-align: center;
+    }
+    .chat-box {
+      flex-grow: 1;
+      padding: 20px;
+      overflow-y: auto;
+      background: #e8ebf2;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .message {
+      max-width: 75%;
+      padding: 12px 18px;
+      border-radius: 20px;
+      line-height: 1.4;
+      word-wrap: break-word;
+      font-size: 0.95rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .user-message {
+      background: #4a90e2;
+      color: white;
+      align-self: flex-end;
+      border-bottom-right-radius: 0;
+    }
+    .bot-message {
+      background: #f0f0f0;
+      color: #333;
+      align-self: flex-start;
+      border-bottom-left-radius: 0;
+    }
+    .chat-input-area {
+      display: flex;
+      border-top: 1px solid #ccc;
+      padding: 10px 15px;
+      background: white;
+    }
+    input[type="text"] {
+      flex-grow: 1;
+      padding: 10px 15px;
+      font-size: 1rem;
+      border-radius: 20px;
+      border: 1px solid #ccc;
+      outline: none;
+      transition: border-color 0.3s;
+    }
+    input[type="text"]:focus {
+      border-color: #4a90e2;
+    }
+    button {
+      margin-left: 10px;
+      background: #4a90e2;
+      border: none;
+      color: white;
+      padding: 0 18px;
+      border-radius: 20px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:disabled {
+      background: #7fa9df;
+      cursor: not-allowed;
+    }
+    button:hover:not(:disabled) {
+      background: #357abd;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="chat-container">
+      <div class="chat-header">💬 Gemini Chatbot</div>
+      <div class="chat-box" ref="chatBox">
+        <div
+          v-for="(msg, index) in messages"
+          :key="index"
+          class="message"
+          :class="msg.role === 'user' ? 'user-message' : 'bot-message'"
+        >
+          {{ msg.content }}
+        </div>
+      </div>
+      <form @submit.prevent="sendMessage" class="chat-input-area">
+        <input
+          type="text"
+          v-model="inputMessage"
+          placeholder="Type your message..."
+          autocomplete="off"
+          :disabled="loading"
+          @keyup.enter="sendMessage"
+          ref="inputField"
+        />
+        <button type="submit" :disabled="loading || !inputMessage.trim()">
+          {{ loading ? "Sending..." : "Send" }}
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script>
+    const { createApp, ref, onMounted, nextTick } = Vue;
+
+    createApp({
+      setup() {
+        const userId = "testuser"; // change later to dynamic user
+        const messages = ref([]);
+        const inputMessage = ref("");
+        const loading = ref(false);
+        const chatBox = ref(null);
+        const inputField = ref(null);
+
+        const scrollToBottom = () => {
+          nextTick(() => {
+            if (chatBox.value) {
+              chatBox.value.scrollTop = chatBox.value.scrollHeight;
+            }
+          });
+        };
+
+        async function loadHistory() {
+          try {
+            const res = await fetch(`http://127.0.0.1:5000/history/${userId}`);
+            const data = await res.json();
+            data.history.forEach((chat) => {
+              messages.value.push({ role: "user", content: chat.message });
+              messages.value.push({ role: "assistant", content: chat.reply });
+            });
+            scrollToBottom();
+          } catch {
+            messages.value.push({
+              role: "assistant",
+              content: "Failed to load chat history.",
+            });
+          }
+        }
+
+        async function sendMessage() {
+          if (!inputMessage.value.trim()) return;
+          messages.value.push({ role: "user", content: inputMessage.value.trim() });
+          loading.value = true;
+
+          try {
+            const res = await fetch("http://127.0.0.1:5000/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_id: userId, message: inputMessage.value }),
+            });
+            const data = await res.json();
+            messages.value.push({ role: "assistant", content: data.reply });
+          } catch {
+            messages.value.push({
+              role: "assistant",
+              content: "Failed to connect to server.",
+            });
+          } finally {
+            loading.value = false;
+            inputMessage.value = "";
+            scrollToBottom();
+            inputField.value.focus();
+          }
+        }
+
+        onMounted(() => {
+          loadHistory();
+          inputField.value.focus();
+        });
+
+        return {
+          messages,
+          inputMessage,
+          loading,
+          sendMessage,
+          chatBox,
+          inputField,
+        };
+      },
+    }).mount("#app");
+  </script>
+</body>
+</html>
